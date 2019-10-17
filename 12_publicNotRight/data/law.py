@@ -21,6 +21,7 @@ jieba.add_word("犯罪时未满")
 jieba.add_word("犯罪时未成年")
 jieba.add_word("未满十八岁")
 jieba.add_word("未满十八周岁")
+jieba.add_word("未成年")
 
 
 # 判断被告人年龄
@@ -76,21 +77,23 @@ def age_judge(people):
     else:
         return 100
 
-#刑事案件未成年人处理
-f = open("criminal.json", 'r', encoding="utf-8")
-ln = 0
+
+f = open("admin.json", 'r', encoding="utf-8")
+
+caseNum = 0
+caseYoung = 0
+caseDivorce = 0
+flagYoung = 0
+flagDivorce = 0
 criminal_dic = []
+
 for line in f.readlines():
-    ln += 1
+    caseNum += 1
+    flagYoung = 0
+    flagDivorce = 0
     dic = json.loads(line)
     criminal_dic.append(dic)
-    '''
-    # 判断被告人年龄，筛选被告人未成年的样本
-    if "当事人" in dic.keys():
-        age_result = age_judge(dic["当事人"])
-        if age_result < 18:
-            print(dic["id"] + '\t' + dic["docName"]+'\t'+str(age_result))
-    '''
+    #未成年人案件一般法案里会说，所以不用判断年龄了
     # 由于所有条文的keys不一致，所以进行全部浏览
     for key in dic.keys():
         criminal_text = dic[key]
@@ -98,46 +101,34 @@ for line in f.readlines():
         word_list = jieba.cut(criminal_text, cut_all=True)  # 全模式分词
         result = pseg.cut(criminal_text)  # 带词性标注的分词
         # 关键词匹配
+        #案件未成年人处理
         if "审理未成年人刑事案件" in criminal_text \
                 or "作案时未满" in criminal_text \
                 or "作案时未成年" in criminal_text \
                 or "犯罪时未成年" in criminal_text \
-                or "犯罪时未满" in criminal_text:
-            print(dic["id"] + '\t' + dic["docName"])
-            break
-        else:
-            continue
+                or "犯罪时未满" in criminal_text \
+                or "未成年" in criminal_text:
+            if (not(key == "相关法律条文" \
+            	or key == "附" \
+            	or "某" in criminal_text \
+            	or "x" in criminal_text \
+            	or "未成年人财产" in criminal_text)):
+            	flagYoung = 1
+            	
+        if "离婚" in criminal_text \
+        	or "未成年子女抚养" in criminal_text:
+        	if (not("某" in criminal_text \
+            	or "x" in criminal_text)):
+        		flagDivorce = 1
+    if flagYoung == 1:
+    	caseYoung += 1
+    	print (dic["id"] + '\t' + dic["docName"])
+    if flagDivorce == 1:
+    	caseDivorce += 1
+    	print(dic["id"] + '\t' + dic["docName"])
+
 f.close()
 
-print(ln)  # 输出所检测的样本总数
-
-
-
-#民事案件
-
-f2 = open("civil.json", 'r', encoding="utf-8")
-ln2 = 0
-civil_dic = []
-for l in f2.readlines():
-    ln2 += 1
-    dic2 = json.loads(l)
-    civil_dic.append(dic2)
-    reason = dic2["reason"]
-    reason_list = jieba.cut(reason, cut_all=False)  # 精准模式分词
-    '''
-    print("**************")
-    print(", ".join(reason_list));
-    print("**************")
-    '''
-    # 首先筛选出离婚纠纷的条文
-    if "离婚" in reason_list:
-        for key in dic2.keys():
-            civil_text = dic2[key]
-            word_list = jieba.cut(civil_text, cut_all=False)  # 精准模式分词
-            result = pseg.cut(civil_text)  # 带词性标注分词
-            # 关键词匹配
-            if "抚养" in civil_text:
-                print(dic2["id"] + '\t' + dic2["docName"])
-                break
-f2.close()
-print(ln2)  # 输出检测的样本总数
+print("案件样本总数为：", caseNum)  # 输出所检测的样本总数
+print("案件样本公开不当（未成年人）：", caseYoung)
+print("案件样本公开不当（离婚纠纷）：", caseDivorce)
