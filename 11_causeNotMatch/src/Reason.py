@@ -1,3 +1,9 @@
+"""
+判断案件是否存在案由不当
+作者: 冯伟琪
+邮箱: fengweiqi@sjtu.edu.cn
+时间: 2019年10月19日
+"""
 import json
 import sys
 import word2vec
@@ -14,79 +20,96 @@ from keras import regularizers
 from keras.callbacks import EarlyStopping
 
 
+def loadData():
+	"""
+	导入json格式的案件数据
 
-def load_data():
+	参数:
+		None
+	
+	返回:
+		papers: 		含有案件信息的list
+		word_embedding: 预先训练的 word2vec 模型
+	"""
 	papers = []
+	# 第一个参数作为被读入的json文件路径
 	filename = sys.argv[1]
 	file = open(filename,'r')
+	# 将读取的数据存入 papers list 中
 	for line in file.readlines():
 		dic = json.loads(line)
 		papers.append(dic)
+	# 导入预训练的 word2vec model
+	word_embedding = word2vec.load('../data/word2vec_result.bin')
+	print("---已经成功导入数据 {}---".format(filename))
 
-	word_embedding = word2vec.load('word2vec_result.bin')#导入预训练好的word2vec embedding
-	print('load data finished')
-	return papers,word_embedding
+	return papers, word_embedding
 
 
+def createInput(papers, word_embedding):
+	"""
+	对案件关键词编码, 并生成训练集和测试集
 
-def create_input(papers,word_embedding,max_length):
+	参数:
+		papers: 		含有案件信息的list
+		word_embedding: 预先训练好的word2vec 模型
+	
+	返回:
+		train_data: 生成的训练集数据
+		test_data:	生成的测试集数据
+	"""
+	# 每一个案件所编码得到的词矩阵为 (1, 100, 100)
+	# 一行中有100个特征，即一个词用100维度向量表示
+	# 一共100行，即100个词语
+	train_data = []
+	test_data = []
+	train_data_ratio = 0.8
+	# 每一个案件抽取的关键词数量
+	word_nums = 100
+	# "认为" 中提取的关键词数量
+	word_num_1 = 97
+	# "docName" 中提取的关键词数量
+	word_num_2 = word_nums - word_num_1
 
-	#一行中有100个特征，即一个词用100维度向量表示
-	#一共100行，即100个词语（时间步长）
-	max_length
-	word_matrix = []
-	input = [] #训练集
-	x_test = []#测试集
-	exist=0
-	for i in range(len(papers)):
-		exist=0
-		for item in papers[i]:
-			if '认为' in item:#extract words from '认为'，本院认为中的信息重要
-				exist = 1 #某条案件中是否存在本院认为，若不存在，则洗掉这条
-				benyuanrenweis = HanLP.segment(papers[i][item])
-				first_word=1
-				keywords = HanLP.extractKeyword(papers[i][item],min(97,len(benyuanrenweis)))#本院认为中提取97个词
-				#for keyword in keywords:
-				#	print(keyword)
-				for keyword in keywords:
-					if keyword!='\n' and keyword!=' ':
-						#构建每一个案件的二维输入矩阵
-						if first_word == 1:
-							word_matrix = word_embedding[keyword].reshape(1,-1)
-							first_word=0
-						else:
-							word_matrix = np.row_stack((word_matrix,word_embedding[keyword].reshape(1,-1)))
-		#extract word from 'docName'
-		if exist==1:
-			keywords = HanLP.extractKeyword(papers[i]['docName'],3) #docName中的信息也很重要，提取3个关键词
-			for keyword in keywords:
-				#print('docName:\n',keyword)
-				if keyword!='\n' and keyword!=' ':
-					word_matrix = np.row_stack((word_matrix,word_embedding[keyword].reshape(1,-1)))
+	# 依次对每一个案件进行处理
+	for (paper_id, paper) in enumerate(papers):
+		# 提取含有认为信息的所有 keys
+		keys = [item for item in paper if "认为" in item]
+		# 判断当前案件是否有效
+		if len(keys) == 0:
+			continue
+		# 提取有效案件信息
+		key = keys[0]
+		length = len(HanLP.segment(paper[key]))
+		# 从 "认为" 对应的信息中提取 
+		words = list(HanLP.extractKeyword(paper[key], min(word_num_1, length)))
+		# 从 "docname" 对应的信息进行提取
+		words += list(HanLP.extractKeyword(paper['docName'], word_num_2))
+		# 去除无用的字符
+		if_valid = lambda word: word != '\n' and word != ' '
+		words = [word for word in words if if_valid(word)]
+		# 得到关键词编码的词向量
+		vecs = [word_embedding[word].reshape(1, -1) for word in words]
+		# 将其处理成矩阵
+		word_matrix = np.concatenate(vecs, 0)	
+		# 填充均值使其为 (1, 100, 100)的形状
+		pad_width = ((0, word_nums - word_matrix.shape[0]), (0, 0))
+		word_matrix = np.pad(word_matrix, pad_width, 'mean')
+		word_matrix = np.expand_dims(word_matrix, 0)
+		# 根据随机数分到 训练集 或者是 测试集中
+		if np.random.rand() < train_data_ratio:
+			train_data.append(word_matrix)
+		else:
+			test_data.append(word_matrix)
 
-			word_matrix = np.pad(word_matrix,((0,max_length-word_matrix.shape[0]),(0,0)),'mean')
-			word_matrix = np.reshape(word_matrix,(1,100,max_length))
-			#构建三维矩阵作为神经网络输入，2/3作为训练集，1/3作为测试集
-			if i%3!=0:#训练集
-				if i==1:#the first to put in input matrix
-					input = word_matrix
-				else:
-					input = np.concatenate([input,word_matrix],0)
-				print(input.shape)
+	# 整理成 numpy 3D array 格式
+	train_data = np.concatenate(train_data)
+	test_data = np.concatenate(test_data)
+	# 存入文件 加速开发流程
+	np.save("../data/criminal_train.npy", train_data)
+	np.save("../data/criminal_test.npy", test_data)
 
-			else :#测试集
-				if i==0:
-					x_test = word_matrix
-				else:
-					x_test = np.concatenate([x_test,word_matrix],0)
-
-		if exist==0:
-			#print(i)
-			exist=1
-
-	np.save("input_train100100_mean.npy",input)
-	np.save("input_test100100_mean.npy",x_test)
-
+	return train_data, test_data				
 
 def create_output(papers):
 	# 给reason编号
@@ -261,21 +284,19 @@ def split_word():
 			    f.write('\n')
 
 
-def main():
-
-	max_length = 100
-	papers, word_embedding = load_data()
-	create_input(papers,word_embedding, max_length)
-	input_train = np.load("input_train100100_mean.npy")
-	input_test = np.load("input_test100100_mean.npy")
-	#print (input_train,input_test)
-	output_train, output_test, output_test_c, reasons, reasonNum = create_output(papers)
-	nerual_network(input_train,output_train,reasons)
-	get_result(input_train,output_train,input_test,output_test,output_test_c,reasons,reasonNum)
+def causeNotMatch():
+	papers, word_embedding = loadData()
+	createInput(papers,word_embedding)
+	# input_train = np.load("input_train100100_mean.npy")
+	# input_test = np.load("input_test100100_mean.npy")
+	# #print (input_train,input_test)
+	# output_train, output_test, output_test_c, reasons, reasonNum = create_output(papers)
+	# nerual_network(input_train,output_train,reasons)
+	# get_result(input_train,output_train,input_test,output_test,output_test_c,reasons,reasonNum)
 	print('success!!')
 
 if __name__=='__main__':
-	main()
+	causeNotMatch()
 
 
 # 案由个数
