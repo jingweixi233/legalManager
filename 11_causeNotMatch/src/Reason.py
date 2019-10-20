@@ -7,6 +7,7 @@
 import json
 import sys
 import word2vec
+import os
 import matplotlib.pyplot as plt
 from pyhanlp import *
 import numpy as np
@@ -118,14 +119,13 @@ def preprocessData(papers, word_embedding):
 	test_data = np.concatenate(test_data)
 	train_target = np.array(train_target)
 	test_target = np.array(test_target)
-	print(train_data.shape)
-	print(test_data.shape)
 	# 存入文件 加速开发流程
-	np.save("../data/criminal_train_data.npy", train_data)
-	np.save("../data/criminal_test_data.npy", test_data)
-	np.save("../data/criminal_train_target.npy", train_target)
-	np.save("../data/criminal_test_target.npy", test_target)
-	np.save("../data/criminal_reason_dict.npy", reason_dict)
+	np.save("../data/civil/civil_train_data.npy", train_data)
+	np.save("../data/civil/civil_test_data.npy", test_data)
+	np.save("../data/civil/civil_train_target.npy", train_target)
+	np.save("../data/civil/civil_test_target.npy", test_target)
+	np.save("../data/civil/civil_reason_dict.npy", reason_dict)
+	print("---已经成功产生训练集和测试集---")
 	return train_data, train_target, test_data, test_target, reason_dict
 
 
@@ -158,157 +158,42 @@ def trainModel(train_data, train_target, reason_num):
 	# 编译神经网络模型
 	model.compile(loss='categorical_crossentropy',optimizer = 'adam',metrics=['accuracy'])
 	# 防止过拟合
-	early_stopping = EarlyStopping(monitor='val_loss',patience=50,verbose=1,mode='auto')
-	train_target = np_utils.to_categorical(train_target, num_classes = reason_num)
-	history = model.fit(train_data, train_target, validation_split=0.15,batch_size=500, epochs=500, callbacks=[early_stopping])
+	train_target = np_utils.to_categorical(train_target, num_classes=reason_num)
+	# 开始训练模型
+	history = model.fit(train_data, train_target, validation_split=0.15, batch_size=500, epochs=500)
+	model.save('../model/civil.h5')
+	print("---训练模型完毕---")
 
-	model.save('criminal.h5')
-
-	#可视化训练过程
-	plt.figure(1)
-	plt.plot(history.history['acc'])
-	plt.plot(history.history['val_acc'])
-	plt.title('model acc')
-	plt.ylabel('acc')
-	plt.xlabel('epoch')
-	plt.legend(['train','test'],loc='upper left')
-	plt.savefig('../data/acc.png')
-
-	plt.figure(2)
-	plt.plot(history.history['loss'])
-	plt.plot(history.history['val_loss'])
-	plt.title('model loss')
-	plt.ylabel('loss')
-	plt.xlabel('epoch')
-	plt.legend(['train','test'],loc='upper right')
-	plt.savefig('../data/loss.png')
-
-
-def get_result(input_train,output_train,input_test,output_test,output_test_c,reasons,reasonNum):
-	f=open('result.txt','a')
-	model = load_model('model100100.h5')
-	result = model.evaluate(input_train,output_train,batch_size=100)
-	#print('\nTrain Acc:',result[1])
-	f.write('\nTrain Acc:')
-	f.write(str(result[1]))
-	result = model.evaluate(input_test,output_test_c)
-	#print('\nTest Acc:',result[1])
-	f.write('\nTest Acc:')
-	f.write(str(result[1]))
-
-	print(model.summary())
-
-	#print(np.argmax(model.predict(input_test),axis=1))
-	predict = np.argmax(model.predict(input_test),axis=1)
-
-	#打印判断错误的案件的真实案由和输出案由
-	count=0
-	for j in range(predict.shape[0]):
-		if predict[j]!=output_test[j]:
-			count=count+1
-			#print(j)
-			for reason in reasons:
-				if reasons[reason]==output_test[j]:
-					#print('correct:',reasons[reason],reason)
-					correct_reason = reason
-				if reasons[reason]==predict[j]:
-					#print('predict:',reasons[reason],reason)
-					predict_reason = reason
-			f.write('\n')
-			f.write('correct reason: ')
-			f.write(correct_reason)
-			f.write(' predict reason: ')
-			f.write(predict_reason)
-	print('total error:',count,count/predict.shape[0])
-
-
-	num_of_this_reason_in_test=[0 for i in range(len(reasons))]
-	num_of_this_reason_error_in_test=[0 for i in range(len(reasons))]
-
-	#对于每种案由的具体分析
-	#以下格式： 案由 数据集中该案由案件数目 测试集中该案由案件数目 测试集中该案由预测错误数目 测试率（测试数目/数据集中总数目） 错误率
-	f.write('\n')
-	for reason in reasons:
-		f.write(reason)
-		#f.write('\tnum of cases: ')
-		f.write('\t')
-		f.write(str(reasonNum[reasons[reason]]))
-		for i in range(predict.shape[0]):
-			if reasons[reason]==output_test[i]:
-				num_of_this_reason_in_test[reasons[reason]]+=1
-				if output_test[i]!=predict[i]:
-					num_of_this_reason_error_in_test[reasons[reason]]+=1
-		#f.write(' total number in test: ')
-		f.write('\t')
-		f.write(str(num_of_this_reason_in_test[reasons[reason]]))
-		#f.write(' error number in test: ')
-		f.write('\t')
-		f.write(str(num_of_this_reason_error_in_test[reasons[reason]]))
-		test_rate=num_of_this_reason_in_test[reasons[reason]]/reasonNum[reasons[reason]]
-		#f.write(' test rate: ')
-		f.write('\t')
-		f.write(str(test_rate))
-		if num_of_this_reason_in_test[reasons[reason]]!=0:
-			#f.write(' error rate: ')
-			f.write('\t')
-			f.write(str(num_of_this_reason_error_in_test[reasons[reason]]/num_of_this_reason_in_test[reasons[reason]]))
-		f.write('\n')
-	f.close()
-
-def split_word():
-    #分词用于训练embedding
-    f = open('split_words.txt','a')
-    for i in range(len(papers)):
-	    for word in papers[i]:
-		    if word!='id' and word!='caseNo' and word!='judgementDateStart':
-			    splits = HanLP.segment(papers[i][word])
-			    for split in splits:
-				    f.write(split.word)
-				    f.write('\t')
-			    f.write('\n')
+def testModel(train_data, train_target, test_data, test_target, reason_num):
+	# 加载预训练模型
+	model = load_model("../model/civil.h5")
+	# 转化成 one-hot 矩阵
+	train_target = np_utils.to_categorical(train_target, num_classes=reason_num)
+	# 转化成 one-hot 矩阵
+	test_target = np_utils.to_categorical(test_target, num_classes=reason_num)
+	result = model.evaluate(train_data, train_target)
+	print("训练集准确率: {:.3f}".format(result[1]))
+	result = model.evaluate(test_data, test_target)
+	print("测试集准确率: {:.3f}".format(result[1]))
 
 
 def causeNotMatch():
 	"""
 	判断案由不当的主函数
 	"""
+	# 不显示无用信息
+	os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 	# 从输入的 json 文件提取案件信息, 并且返回预训练的词向量模型
-	# papers, word_embedding = loadData()
+	papers, word_embedding = loadData()
 	# 从案件信息中提取训练集和测试集的
-	# train_data, train_target, test_data, test_target, reason_dict = preprocessData(papers, word_embedding)
-	train_data = np.load("../data/criminal_train_data.npy")
-	test_data = np.load("../data/criminal_test_data.npy")
-	train_target = np.load("../data/criminal_train_target.npy")
-	test_target = np.load("../data/criminal_test_target.npy")
-	reason_dict = np.load("../data/criminal_reason_dict.npy", allow_pickle=True).item()
+	train_data, train_target, test_data, test_target, reason_dict = preprocessData(papers, word_embedding)
+	# 训练我们的模型
 	trainModel(train_data, train_target, len(reason_dict))
-	# get_result(input_train,output_train,input_test,output_test,output_test_c,reasons,reasonNum)
-	print('success!!')
+	# 测试我们的模型
+	testModel(train_data, train_target, test_data, test_target, len(reason_dict))
+	print("---案由不当检测完毕---")
 
+	
 if __name__=='__main__':
 	causeNotMatch()
 
-
-# 案由个数
-# criminal 137
-# civil 180
-# admin 36
-'''
-id
-docName		*
-court
-caseNo
-caseType
-instrumentType
-reason
-procedureId
-referenceType
-judgementDateStart
-当事人
-审理经过
-公诉机关称
-本院查明
-本院认为	*
-裁判结果
-审判人员
-'''

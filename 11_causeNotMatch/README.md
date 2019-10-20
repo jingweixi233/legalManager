@@ -18,12 +18,6 @@ python Reason.py xx
 ### 参数说明
 xx: criminal.json 或 civil.json 或 admin.json
 
-
----
 ## 实验结果简要说明
-- 运行Reason.py，即处理数据并训练一个神经网络
 - 实验结果分析
-	- model for criminal 95.h5 为已训练好的针对criminal类案件的模型，accuracy为95%
-	- model for civil 68.h5 为已训练好的针对civil类案件的模型，accuracy为68%
-	- model for admin 44.h5 为已训练好的针对admin类案件的模型，accuracy为44%
-	- 此三个模型可以直接使用
+	- 针对criminal.json 训练集(3567)准确率 87.4%, 测试集(930)准确率 72.5%
