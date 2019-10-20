@@ -120,11 +120,6 @@ def preprocessData(papers, word_embedding):
 	train_target = np.array(train_target)
 	test_target = np.array(test_target)
 	# 存入文件 加速开发流程
-	np.save("../data/civil/civil_train_data.npy", train_data)
-	np.save("../data/civil/civil_test_data.npy", test_data)
-	np.save("../data/civil/civil_train_target.npy", train_target)
-	np.save("../data/civil/civil_test_target.npy", test_target)
-	np.save("../data/civil/civil_reason_dict.npy", reason_dict)
 	print("---已经成功产生训练集和测试集---")
 	return train_data, train_target, test_data, test_target, reason_dict
 
@@ -161,12 +156,24 @@ def trainModel(train_data, train_target, reason_num):
 	train_target = np_utils.to_categorical(train_target, num_classes=reason_num)
 	# 开始训练模型
 	history = model.fit(train_data, train_target, validation_split=0.15, batch_size=500, epochs=500)
-	model.save('../model/civil.h5')
+	model.save('../model/admin.h5')
 	print("---训练模型完毕---")
 
 def testModel(train_data, train_target, test_data, test_target, reason_num):
+	"""
+	将训练好的模型在训练集和测试集进行测试, 并打印相关信息
+
+	参数:
+		train_data: 	训练数据
+		trian_target:	训练标签
+		test_data:		测试数据
+		test_target:	测试标签
+	
+	返回:
+		None
+	"""
 	# 加载预训练模型
-	model = load_model("../model/civil.h5")
+	model = load_model("../model/admin.h5")
 	# 转化成 one-hot 矩阵
 	train_target = np_utils.to_categorical(train_target, num_classes=reason_num)
 	# 转化成 one-hot 矩阵

@@ -18,6 +18,8 @@ python Reason.py xx
 ### 参数说明
 xx: criminal.json 或 civil.json 或 admin.json
 
-## 实验结果简要说明
+## 实验结果
 - 实验结果分析
-	- 针对criminal.json 训练集(3567)准确率 87.4%, 测试集(930)准确率 72.5%
+	- criminal.json 训练集(3567)准确率 87.4%, 测试集(930)准确率 72.5%
+	- civil.json	训练集(1273)准确率 86.9%, 测试集(317)准确率 69.1%
+	- admin.json	训练集(232) 准确率 89.2%, 测试集(63 )准确率 47.6%
