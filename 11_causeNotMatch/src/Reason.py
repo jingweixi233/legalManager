@@ -46,7 +46,7 @@ def loadData():
 	return papers, word_embedding
 
 
-def createInput(papers, word_embedding):
+def preprocessData(papers, word_embedding):
 	"""
 	对案件关键词编码, 并生成训练集和测试集
 
@@ -55,14 +55,18 @@ def createInput(papers, word_embedding):
 		word_embedding: 预先训练好的word2vec 模型
 	
 	返回:
-		train_data: 生成的训练集数据
-		test_data:	生成的测试集数据
+		train_data: 	训练集数据
+		train_target: 	训练集标签
+		test_data:		测试集数据
+		test_label:		测试集标签	
 	"""
 	# 每一个案件所编码得到的词矩阵为 (1, 100, 100)
 	# 一行中有100个特征，即一个词用100维度向量表示
 	# 一共100行，即100个词语
 	train_data = []
+	train_target = []
 	test_data = []
+	test_target = []
 	train_data_ratio = 0.8
 	# 每一个案件抽取的关键词数量
 	word_nums = 100
@@ -70,7 +74,10 @@ def createInput(papers, word_embedding):
 	word_num_1 = 97
 	# "docName" 中提取的关键词数量
 	word_num_2 = word_nums - word_num_1
-
+	# 创建 "reason" 字典 ("reason": "reason id")
+	reasons = list(set([paper["reason"] for paper in papers]))
+	reason_pairs = [(reason, reason_id) for (reason_id, reason) in enumerate(reasons)]
+	reason_dict = dict(reason_pairs)
 	# 依次对每一个案件进行处理
 	for (paper_id, paper) in enumerate(papers):
 		# 提取含有认为信息的所有 keys
@@ -96,73 +103,47 @@ def createInput(papers, word_embedding):
 		pad_width = ((0, word_nums - word_matrix.shape[0]), (0, 0))
 		word_matrix = np.pad(word_matrix, pad_width, 'mean')
 		word_matrix = np.expand_dims(word_matrix, 0)
+		# 提取原因
+		reason = paper['reason']
 		# 根据随机数分到 训练集 或者是 测试集中
 		if np.random.rand() < train_data_ratio:
 			train_data.append(word_matrix)
+			train_target.append(reason_dict[reason])
 		else:
 			test_data.append(word_matrix)
+			test_target.append(reason_dict[reason])
 
 	# 整理成 numpy 3D array 格式
 	train_data = np.concatenate(train_data)
 	test_data = np.concatenate(test_data)
+	train_target = np.array(train_target)
+	test_target = np.array(test_target)
+	print(train_data.shape)
+	print(test_data.shape)
 	# 存入文件 加速开发流程
-	np.save("../data/criminal_train.npy", train_data)
-	np.save("../data/criminal_test.npy", test_data)
-
-	return train_data, test_data				
-
-def create_output(papers):
-	# 给reason编号
-	reasons = {}
-	j=0
-	flag=1
-	reasonNum = [0 for i in range(180)]
-	for i in range(len(papers)):
-		if i==0:
-			reasons[papers[i]['reason']]=j
-			j=j+1
-			#print(j,reasons)
-
-		else:
-			for k in range(i):
-				if papers[i]['reason']==papers[k]['reason']:
-					flag=0
-
-			if flag==1:
-				reasons[papers[i]['reason']]=j
-				j=j+1
-			flag=1
-	#每个reason有多少个案例
-	for i in range(len(papers)):
-		for reason in reasons:
-			if reason==papers[i]['reason']:
-				reasonNum[reasons[reason]]+=1
+	np.save("../data/criminal_train_data.npy", train_data)
+	np.save("../data/criminal_test_data.npy", test_data)
+	np.save("../data/criminal_train_target.npy", train_target)
+	np.save("../data/criminal_test_target.npy", test_target)
+	np.save("../data/criminal_reason_dict.npy", reason_dict)
+	return train_data, train_target, test_data, test_target, reason_dict
 
 
-	output_train = []
-	output_test = []
-	for i in range(len(papers)):
-	#	if i!=527 and i!=800 and i!=881 and i!= 1011 and i!=1402 and i!=1410 and i!=1450 and i!=1457 and i!=1459 and i!=1473:#civil中这些案件没有“本院认为”或“一审法院认为”，剔除
-	#	if i!=1638 and i!=2095 and i!=3262:#criminal中这些案件没有“本院认为”或“一审法院认为”，剔除
-			if i%3!=0:
-				output_train.append(reasons[papers[i]['reason']])
-			else :
-				output_test.append(reasons[papers[i]['reason']])
-	output_train = np.array(output_train)
-	output_train = np_utils.to_categorical(output_train,num_classes = len(reasons))
-	output_test = np.array(output_test)
-	output_test_c = np_utils.to_categorical(output_test,num_classes = len(reasons))
-	#print (output)
-	print ("ouput.shape: ",output_train.shape,output_test_c.shape)
+def trainModel(train_data, train_target, reason_num):
+	"""
+	训练神经网络模型, 并保存模型训练文件
 
-	return output_train,output_test,output_test_c,reasons,reasonNum
+	参数:
+		train_data: 	训练数据
+		train_target:	训练标签
+		reason_num:		分类案由的数目
 
-
-def nerual_network(input_train,output_train,reasons):
-	#neural network
+	返回: 
+		None
+	"""
+	# 定义神经网络模型
 	model = Sequential()
 	model.add(GRU(384,input_shape=(100,100)))
-
 	model.add(Dropout(0.5))
 	model.add(Dense(units=384,activation = 'relu'))
 	model.add(Dropout(0.5))
@@ -172,13 +153,16 @@ def nerual_network(input_train,output_train,reasons):
 	model.add(Dropout(0.5))
 	model.add(Dense(units=384,activation = 'relu'))
 	model.add(Dropout(0.5))
-	model.add(Dense(units=len(reasons),activation = 'softmax'))
+	model.add(Dense(units=reason_num, activation = 'softmax'))
 
+	# 编译神经网络模型
 	model.compile(loss='categorical_crossentropy',optimizer = 'adam',metrics=['accuracy'])
+	# 防止过拟合
 	early_stopping = EarlyStopping(monitor='val_loss',patience=50,verbose=1,mode='auto')
-	history = model.fit(input_train,output_train,validation_split=0.15,batch_size=500,epochs=500,callbacks=[early_stopping])
+	train_target = np_utils.to_categorical(train_target, num_classes = reason_num)
+	history = model.fit(train_data, train_target, validation_split=0.15,batch_size=500, epochs=500, callbacks=[early_stopping])
 
-	model.save('model100100.h5')
+	model.save('criminal.h5')
 
 	#可视化训练过程
 	plt.figure(1)
@@ -188,7 +172,7 @@ def nerual_network(input_train,output_train,reasons):
 	plt.ylabel('acc')
 	plt.xlabel('epoch')
 	plt.legend(['train','test'],loc='upper left')
-	plt.savefig('./acc.png')
+	plt.savefig('../data/acc.png')
 
 	plt.figure(2)
 	plt.plot(history.history['loss'])
@@ -197,7 +181,7 @@ def nerual_network(input_train,output_train,reasons):
 	plt.ylabel('loss')
 	plt.xlabel('epoch')
 	plt.legend(['train','test'],loc='upper right')
-	plt.savefig('./loss.png')
+	plt.savefig('../data/loss.png')
 
 
 def get_result(input_train,output_train,input_test,output_test,output_test_c,reasons,reasonNum):
@@ -285,13 +269,19 @@ def split_word():
 
 
 def causeNotMatch():
-	papers, word_embedding = loadData()
-	createInput(papers,word_embedding)
-	# input_train = np.load("input_train100100_mean.npy")
-	# input_test = np.load("input_test100100_mean.npy")
-	# #print (input_train,input_test)
-	# output_train, output_test, output_test_c, reasons, reasonNum = create_output(papers)
-	# nerual_network(input_train,output_train,reasons)
+	"""
+	判断案由不当的主函数
+	"""
+	# 从输入的 json 文件提取案件信息, 并且返回预训练的词向量模型
+	# papers, word_embedding = loadData()
+	# 从案件信息中提取训练集和测试集的
+	# train_data, train_target, test_data, test_target, reason_dict = preprocessData(papers, word_embedding)
+	train_data = np.load("../data/criminal_train_data.npy")
+	test_data = np.load("../data/criminal_test_data.npy")
+	train_target = np.load("../data/criminal_train_target.npy")
+	test_target = np.load("../data/criminal_test_target.npy")
+	reason_dict = np.load("../data/criminal_reason_dict.npy", allow_pickle=True).item()
+	trainModel(train_data, train_target, len(reason_dict))
 	# get_result(input_train,output_train,input_test,output_test,output_test_c,reasons,reasonNum)
 	print('success!!')
 
