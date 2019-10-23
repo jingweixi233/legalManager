@@ -41,14 +41,11 @@ def loadData():
 	filenames.append("../data/civil.json")
 	filenames.append("../data/admin.json")
 	labels = [0, 1, 2]
-	keys = []
 	for filename, label in zip(filenames, labels):
 		# 将读取的案件数据存入 papers list 中
 		with open(filename, 'r') as file:
 			for line in file.readlines():
 				dic = json.loads(line)
-				keys += list(dic.keys())
-				keys = list(set(keys))
 				papers.append(dic)
 				paper_labels.append(label)
 	# 导入预训练的 word2vec model

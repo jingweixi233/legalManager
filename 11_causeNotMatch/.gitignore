@@ -105,3 +105,6 @@ venv.bak/
 
 data
 model
+src/nohup.out
+src/keyword.txt
+visual

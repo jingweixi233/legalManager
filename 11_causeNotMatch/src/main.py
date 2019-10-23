@@ -20,6 +20,10 @@ from keras.models import load_model
 from keras import regularizers
 from keras.callbacks import EarlyStopping
 
+# Import for testing baseline
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+
 
 def loadData():
 	"""
@@ -151,13 +155,45 @@ def trainModel(train_data, train_target, reason_num):
 	model.add(Dense(units=reason_num, activation = 'softmax'))
 
 	# 编译神经网络模型
-	model.compile(loss='categorical_crossentropy',optimizer = 'adam',metrics=['accuracy'])
+	model.compile(loss='categorical_crossentropy',optimizer = 'adam',metrics=['acc'])
 	# 防止过拟合
 	train_target = np_utils.to_categorical(train_target, num_classes=reason_num)
 	# 开始训练模型
 	history = model.fit(train_data, train_target, validation_split=0.15, batch_size=500, epochs=500)
-	model.save('../model/admin.h5')
+	saveFig(history, "../visual/admin_loss.png", "../visual/admin_acc.png")
+	# model.save('../visual/criminal.h5')
 	print("---训练模型完毕---")
+
+
+def saveFig(history, loss_file, acc_file):
+	"""
+	可视化并保存图片
+
+	参数:
+		history: 	keras model.fit() 的返回值
+		loss_file:	loss 可视化图片名
+		acc_file:	acc 可视化图片名
+
+	返回:	
+		None
+	"""
+	# Plot training & validation accuracy values
+	plt.plot(history.history['acc'])
+	plt.plot(history.history['val_acc'])
+	plt.title('Model accuracy')
+	plt.ylabel('Accuracy')
+	plt.xlabel('Epoch')
+	plt.legend(['Train', 'Test'], loc='upper left')
+	plt.savefig(loss_file)
+	plt.clf()
+	# Plot training & validation loss values
+	plt.plot(history.history['loss'])
+	plt.plot(history.history['val_loss'])
+	plt.title('Model loss')
+	plt.ylabel('Loss')
+	plt.xlabel('Epoch')
+	plt.legend(['Train', 'Test'], loc='upper left')
+	plt.savefig(acc_file)
 
 def testModel(train_data, train_target, test_data, test_target, reason_num):
 	"""
@@ -173,7 +209,7 @@ def testModel(train_data, train_target, test_data, test_target, reason_num):
 		None
 	"""
 	# 加载预训练模型
-	model = load_model("../model/admin.h5")
+	# model = load_model("../visual/criminal.h5")
 	# 转化成 one-hot 矩阵
 	train_target = np_utils.to_categorical(train_target, num_classes=reason_num)
 	# 转化成 one-hot 矩阵
@@ -191,16 +227,103 @@ def causeNotMatch():
 	# 不显示无用信息
 	os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 	# 从输入的 json 文件提取案件信息, 并且返回预训练的词向量模型
-	papers, word_embedding = loadData()
+	# papers, word_embedding = loadData()
 	# 从案件信息中提取训练集和测试集的
-	train_data, train_target, test_data, test_target, reason_dict = preprocessData(papers, word_embedding)
+	# train_data, train_target, test_data, test_target, reason_dict = preprocessData(papers, word_embedding)
+
+	train_data, train_target, test_data, test_target, reason_dict = loadAdminData()
 	# 训练我们的模型
 	trainModel(train_data, train_target, len(reason_dict))
 	# 测试我们的模型
-	testModel(train_data, train_target, test_data, test_target, len(reason_dict))
+	# testModel(train_data, train_target, test_data, test_target, len(reason_dict))
+
 	print("---案由不当检测完毕---")
 
-	
+
+def loadCriminalData():
+	"""
+	导入实现处理好的 Criminal 数据
+	"""
+	train_data = np.load("../data/criminal/criminal_train_data.npy")
+	train_target = np.load("../data/criminal/criminal_train_target.npy")
+	test_data = np.load("../data/criminal/criminal_test_data.npy")
+	test_target = np.load("../data/criminal/criminal_test_target.npy")
+	reason_dict = np.load("../data/criminal/criminal_reason_dict.npy", allow_pickle=True).item()
+
+	return train_data, train_target, test_data, test_target, reason_dict
+
+
+def loadCivilData():
+	"""
+	导入实现处理好的 Civil 数据
+	"""
+	train_data = np.load("../data/civil/civil_train_data.npy")
+	train_target = np.load("../data/civil/civil_train_target.npy")
+	test_data = np.load("../data/civil/civil_test_data.npy")
+	test_target = np.load("../data/civil/civil_test_target.npy")
+	reason_dict = np.load("../data/civil/civil_reason_dict.npy", allow_pickle=True).item()
+
+	return train_data, train_target, test_data, test_target, reason_dict
+
+
+def loadAdminData():
+	"""
+	导入实现处理好的 Admin 数据
+	"""
+	train_data = np.load("../data/admin/admin_train_data.npy")
+	train_target = np.load("../data/admin/admin_train_target.npy")
+	test_data = np.load("../data/admin/admin_test_data.npy")
+	test_target = np.load("../data/admin/admin_test_target.npy")
+	reason_dict = np.load("../data/admin/admin_reason_dict.npy", allow_pickle=True).item()
+
+	return train_data, train_target, test_data, test_target, reason_dict
+
+
+def baslineSVM():
+	"""
+	用 SVM 作为 baseline 模型
+	"""
+	# 导入 Criminal 的数据
+	train_data, train_target, test_data, test_target, reason_dict = loadCriminalData()
+	# 导入 Civil 的数据
+	train_data, train_target, test_data, test_target, reason_dict = loadCivilData()
+	# 导入 Admin 的数据
+	train_data, train_target, test_data, test_target, reason_dict = loadAdminData()	
+	# 重新 Reshape 训练数据和测试数据
+	train_data = train_data.reshape(train_data.shape[0], -1)
+	test_data = test_data.reshape(test_data.shape[0], -1)
+	train_target = train_target.reshape(-1, 1)
+	test_target = test_target.reshape(-1, 1)
+	# 用 SVM 作为baseline
+	clf = SVC(gamma="auto", verbose=True, max_iter=100)
+	clf.fit(train_data, train_target)
+	print(clf.score(train_data, train_target))
+	print(clf.score(test_data, test_target))
+
+
+def baselineRandomForest():
+	"""
+	用 Random Forest 作为 baseline
+	"""
+	# 导入 Criminal 的数据
+	train_data, train_target, test_data, test_target, reason_dict = loadCriminalData()
+	# 导入 Civil 的数据
+	# train_data, train_target, test_data, test_target, reason_dict = loadCivilData()
+	# 导入 Admin 的数据
+	# train_data, train_target, test_data, test_target, reason_dict = loadAdminData()	
+	# 重新 Reshape 训练数据和测试数据
+	train_data = train_data.reshape(train_data.shape[0], -1)
+	test_data = test_data.reshape(test_data.shape[0], -1)
+	train_target = train_target.reshape(-1, 1)
+	test_target = test_target.reshape(-1, 1)
+	# 用 SVM 作为baseline
+	clf = RandomForestClassifier(n_estimators=100, max_depth=2, random_state=0)
+	clf.fit(train_data, train_target)
+	print(clf.score(train_data, train_target))
+	print(clf.score(test_data, test_target))
+
+
 if __name__=='__main__':
 	causeNotMatch()
+
 
