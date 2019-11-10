@@ -13,11 +13,6 @@ yy:
 
 ---
 ## 实验结果简要说明
-- 运行xxx算法，实验结果为
-	- accuracy: , precision: , recall:
-- 运行xxx算法，实验结果为
-	- accuracy: , precision: , recall:
 - 实验结果分析
-	- xxx
-	- xxx
-	- xxx
+	- 训练集(5091) 准确率: 94.2%
+	- 测试集(1291) 准确率: 94.5%
