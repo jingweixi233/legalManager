@@ -24,6 +24,7 @@ from keras.callbacks import EarlyStopping
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 
+INPUT = 30
 
 def loadData():
 	"""
@@ -43,7 +44,9 @@ def loadData():
 	# 将读取的数据存入 papers list 中
 	for line in file.readlines():
 		dic = json.loads(line)
-		papers.append(dic)
+
+	for key in dic.keys():
+		papers.append(dic[key])
 	# 导入预训练的 word2vec model
 	word_embedding = word2vec.load('../data/word2vec_result.bin')
 	print("---已经成功导入数据 {}---".format(filename))
@@ -74,42 +77,48 @@ def preprocessData(papers, word_embedding):
 	test_target = []
 	train_data_ratio = 0.8
 	# 每一个案件抽取的关键词数量
-	word_nums = 100
+	word_nums = INPUT
 	# "认为" 中提取的关键词数量
-	word_num_1 = 97
-	# "docName" 中提取的关键词数量
+	word_num_1 = 20
+	# "全文" 中提取的关键词数量
 	word_num_2 = word_nums - word_num_1
 	# 创建 "reason" 字典 ("reason": "reason id")
-	reasons = list(set([paper["reason"] for paper in papers]))
+	reasons = [paper["案由"] for paper in papers if paper['案由'] != []]
+	reasons = list(set(reasons))
 	reason_pairs = [(reason, reason_id) for (reason_id, reason) in enumerate(reasons)]
 	reason_dict = dict(reason_pairs)
 	# 依次对每一个案件进行处理
+	cnt = 0
 	for (paper_id, paper) in enumerate(papers):
+		if '本院认为' not in paper.keys() or paper['本院认为'] == [] or paper['案由'] == []:
+			continue
 		# 提取含有认为信息的所有 keys
 		keys = [item for item in paper if "认为" in item]
 		# 判断当前案件是否有效
 		if len(keys) == 0:
 			continue
+		cnt += 1
 		# 提取有效案件信息
 		key = keys[0]
-		length = len(HanLP.segment(paper[key]))
+		length = len(HanLP.segment(paper[key][0]))
 		# 从 "认为" 对应的信息中提取 
-		words = list(HanLP.extractKeyword(paper[key], min(word_num_1, length)))
+		words = list(HanLP.extractKeyword(paper[key][0], min(word_num_1, length)))
 		# 从 "docname" 对应的信息进行提取
-		words += list(HanLP.extractKeyword(paper['docName'], word_num_2))
+		length = len(HanLP.segment(paper['全文'][0]))
+		words += list(HanLP.extractKeyword(paper['全文'][0], min(word_num_2, length)))
 		# 去除无用的字符
 		if_valid = lambda word: word != '\n' and word != ' '
 		words = [word for word in words if if_valid(word)]
 		# 得到关键词编码的词向量
-		vecs = [word_embedding[word].reshape(1, -1) for word in words]
+		vecs = [word_embedding[word].reshape(1, -1) for word in words if word in word_embedding.vocab]
 		# 将其处理成矩阵
 		word_matrix = np.concatenate(vecs, 0)	
-		# 填充均值使其为 (1, 100, 100)的形状
+		# 填充均值使其为 (1, 30, 100)的形状
 		pad_width = ((0, word_nums - word_matrix.shape[0]), (0, 0))
 		word_matrix = np.pad(word_matrix, pad_width, 'mean')
 		word_matrix = np.expand_dims(word_matrix, 0)
 		# 提取原因
-		reason = paper['reason']
+		reason = paper['案由']
 		# 根据随机数分到 训练集 或者是 测试集中
 		if np.random.rand() < train_data_ratio:
 			train_data.append(word_matrix)
@@ -117,7 +126,7 @@ def preprocessData(papers, word_embedding):
 		else:
 			test_data.append(word_matrix)
 			test_target.append(reason_dict[reason])
-
+		print("处理进度: {} / {}".format(paper_id, len(papers)))
 	# 整理成 numpy 3D array 格式
 	train_data = np.concatenate(train_data)
 	test_data = np.concatenate(test_data)
@@ -125,6 +134,11 @@ def preprocessData(papers, word_embedding):
 	test_target = np.array(test_target)
 	# 存入文件 加速开发流程
 	print("---已经成功产生训练集和测试集---")
+	np.save("../data/dic/dic_train_data.npy", train_data)
+	np.save("../data/dic/dic_train_target.npy", train_target)
+	np.save("../data/dic/dic_test_data.npy", test_data)
+	np.save("../data/dic/dic_test_target.npy", test_target)
+	np.save("../data/dic/dic_reason_dict.npy", reason_dict)
 	return train_data, train_target, test_data, test_target, reason_dict
 
 
@@ -142,7 +156,7 @@ def trainModel(train_data, train_target, reason_num):
 	"""
 	# 定义神经网络模型
 	model = Sequential()
-	model.add(GRU(384,input_shape=(100,100)))
+	model.add(GRU(384,input_shape=(INPUT,100)))
 	model.add(Dropout(0.5))
 	model.add(Dense(units=384,activation = 'relu'))
 	model.add(Dropout(0.5))
@@ -159,9 +173,9 @@ def trainModel(train_data, train_target, reason_num):
 	# 防止过拟合
 	train_target = np_utils.to_categorical(train_target, num_classes=reason_num)
 	# 开始训练模型
-	history = model.fit(train_data, train_target, validation_split=0.15, batch_size=500, epochs=500)
-	saveFig(history, "../visual/admin_loss.png", "../visual/admin_acc.png")
-	# model.save('../visual/criminal.h5')
+	history = model.fit(train_data, train_target, validation_split=0.15, batch_size=50, epochs=1500)
+	saveFig(history, "../visual/dic_loss.png", "../visual/dic.png")
+	model.save('../model/dic.h5')
 	print("---训练模型完毕---")
 
 
@@ -209,7 +223,7 @@ def testModel(train_data, train_target, test_data, test_target, reason_num):
 		None
 	"""
 	# 加载预训练模型
-	# model = load_model("../visual/criminal.h5")
+	model = load_model("../model/dic.h5")
 	# 转化成 one-hot 矩阵
 	train_target = np_utils.to_categorical(train_target, num_classes=reason_num)
 	# 转化成 one-hot 矩阵
@@ -231,50 +245,23 @@ def causeNotMatch():
 	# 从案件信息中提取训练集和测试集的
 	# train_data, train_target, test_data, test_target, reason_dict = preprocessData(papers, word_embedding)
 
-	train_data, train_target, test_data, test_target, reason_dict = loadAdminData()
+	train_data, train_target, test_data, test_target, reason_dict = loadDicData()
 	# 训练我们的模型
-	trainModel(train_data, train_target, len(reason_dict))
+	# trainModel(train_data, train_target, len(reason_dict))
 	# 测试我们的模型
-	# testModel(train_data, train_target, test_data, test_target, len(reason_dict))
+	testModel(train_data, train_target, test_data, test_target, len(reason_dict))
 
 	print("---案由不当检测完毕---")
 
-
-def loadCriminalData():
+def loadDicData():
 	"""
-	导入实现处理好的 Criminal 数据
+	导入实现处理好的 Dic 数据
 	"""
-	train_data = np.load("../data/criminal/criminal_train_data.npy")
-	train_target = np.load("../data/criminal/criminal_train_target.npy")
-	test_data = np.load("../data/criminal/criminal_test_data.npy")
-	test_target = np.load("../data/criminal/criminal_test_target.npy")
-	reason_dict = np.load("../data/criminal/criminal_reason_dict.npy", allow_pickle=True).item()
-
-	return train_data, train_target, test_data, test_target, reason_dict
-
-
-def loadCivilData():
-	"""
-	导入实现处理好的 Civil 数据
-	"""
-	train_data = np.load("../data/civil/civil_train_data.npy")
-	train_target = np.load("../data/civil/civil_train_target.npy")
-	test_data = np.load("../data/civil/civil_test_data.npy")
-	test_target = np.load("../data/civil/civil_test_target.npy")
-	reason_dict = np.load("../data/civil/civil_reason_dict.npy", allow_pickle=True).item()
-
-	return train_data, train_target, test_data, test_target, reason_dict
-
-
-def loadAdminData():
-	"""
-	导入实现处理好的 Admin 数据
-	"""
-	train_data = np.load("../data/admin/admin_train_data.npy")
-	train_target = np.load("../data/admin/admin_train_target.npy")
-	test_data = np.load("../data/admin/admin_test_data.npy")
-	test_target = np.load("../data/admin/admin_test_target.npy")
-	reason_dict = np.load("../data/admin/admin_reason_dict.npy", allow_pickle=True).item()
+	train_data = np.load("../data/dic/dic_train_data.npy")
+	train_target = np.load("../data/dic/dic_train_target.npy")
+	test_data = np.load("../data/dic/dic_test_data.npy")
+	test_target = np.load("../data/dic/dic_test_target.npy")
+	reason_dict = np.load("../data/dic/dic_reason_dict.npy", allow_pickle=True).item()
 
 	return train_data, train_target, test_data, test_target, reason_dict
 
@@ -284,18 +271,15 @@ def baslineSVM():
 	用 SVM 作为 baseline 模型
 	"""
 	# 导入 Criminal 的数据
-	train_data, train_target, test_data, test_target, reason_dict = loadCriminalData()
-	# 导入 Civil 的数据
-	train_data, train_target, test_data, test_target, reason_dict = loadCivilData()
-	# 导入 Admin 的数据
-	train_data, train_target, test_data, test_target, reason_dict = loadAdminData()	
+	train_data, train_target, test_data, test_target, reason_dict = loadDicData()
+	
 	# 重新 Reshape 训练数据和测试数据
 	train_data = train_data.reshape(train_data.shape[0], -1)
 	test_data = test_data.reshape(test_data.shape[0], -1)
 	train_target = train_target.reshape(-1, 1)
 	test_target = test_target.reshape(-1, 1)
 	# 用 SVM 作为baseline
-	clf = SVC(gamma="auto", verbose=True, max_iter=100)
+	clf = SVC(gamma=10.0, verbose=True)
 	clf.fit(train_data, train_target)
 	print(clf.score(train_data, train_target))
 	print(clf.score(test_data, test_target))
@@ -306,24 +290,19 @@ def baselineRandomForest():
 	用 Random Forest 作为 baseline
 	"""
 	# 导入 Criminal 的数据
-	train_data, train_target, test_data, test_target, reason_dict = loadCriminalData()
-	# 导入 Civil 的数据
-	# train_data, train_target, test_data, test_target, reason_dict = loadCivilData()
-	# 导入 Admin 的数据
-	# train_data, train_target, test_data, test_target, reason_dict = loadAdminData()	
-	# 重新 Reshape 训练数据和测试数据
+	train_data, train_target, test_data, test_target, reason_dict = loadDicData()
 	train_data = train_data.reshape(train_data.shape[0], -1)
 	test_data = test_data.reshape(test_data.shape[0], -1)
 	train_target = train_target.reshape(-1, 1)
 	test_target = test_target.reshape(-1, 1)
 	# 用 SVM 作为baseline
-	clf = RandomForestClassifier(n_estimators=100, max_depth=2, random_state=0)
+	clf = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=0)
 	clf.fit(train_data, train_target)
 	print(clf.score(train_data, train_target))
 	print(clf.score(test_data, test_target))
 
 
 if __name__=='__main__':
-	causeNotMatch()
+	baslineSVM()
 
 
