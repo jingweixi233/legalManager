@@ -100,7 +100,7 @@ for key in dic.keys():
     	numYoung += 1
     	print ("（未成年）" + key)
 
-    if ((flagVictim == 1) and (caseCriminal == 1)):
+    if (flagVictim == 1):
     	numVictim += 1
     	print ("（被害人）" + key)
 
