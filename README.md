@@ -1,3 +1,3 @@
-# Legal Manager
+# 案件评查项目代码库
 
-Redesign the whole framework of legal manager. 
+案件排查及项目代码、实验结果、案例检验
