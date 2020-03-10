@@ -20,10 +20,10 @@ xx: criminal.json 或 civil.json 或 admin.json
 
 ## 实验结果
 - 我们的GRU模型
-	- dic.json 训练集(352)准确率 96.4%, 测试集(87)准确率 75.1%
+	- dic.json 训练集(352)准确率 96.4%, 测试集(87)准确率 75.3%
 	
 - Baseline SVM
-	- dic.json 训练集(352)准确率 99.7%, 测试集(87)准确率 51.9%
+	- dic.json 训练集(352)准确率 99.7%, 测试集(87)准确率 61.9%
 
 - Baseline Random Forest
 	- dic.json 训练集(352)准确率 99.1%, 测试集(87)准确率 69.1%
